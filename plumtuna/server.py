@@ -17,14 +17,19 @@ class PlumtunaServer(object):
         if contact_host is not None:
             args.extend(["--contact_server", "{}:{}".format(contact_host, contact_port)])
 
-        self._process = subprocess.Popen(args)
+        self._process = subprocess.Popen(args, stdin=subprocess.PIPE)
+        assert self._process is not None
+
         self.http_port = http_port
         self.rpc_addr = rpc_addr
         self.rpc_port = rpc_port
 
     def __del__(self):
         if self._process is not None:
-            self._process.kill()
+            try:
+                self._process.kill()
+            except AttributeError:
+                pass
 
 
 def find_rpc_client_addr_and_port(addr=None, port=None, contact_host=None, contact_port=None):

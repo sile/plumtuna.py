@@ -5,6 +5,7 @@ from optuna.storages import base
 from optuna.storages.base import DEFAULT_STUDY_NAME_PREFIX
 from optuna import structs
 import requests
+import time
 from typing import Any  # NOQA
 from typing import Dict  # NOQA
 from typing import List  # NOQA
@@ -19,6 +20,9 @@ from plumtuna import PlumtunaServer
 class PlumtunaStorage(base.BaseStorage):
     def __init__(self, bind_addr=None, bind_port=None, contact_host=None, contact_port=None):
         self.server = PlumtunaServer(bind_addr, bind_port, contact_host, contact_port)
+
+        # TODO
+        time.sleep(5)
 
         self.http_host = '127.0.0.1'
         self.http_port = self.server.http_port
@@ -181,7 +185,8 @@ class PlumtunaStorage(base.BaseStorage):
     def get_all_trials(self, study_id):
         # type: (int) -> List[structs.FrozenTrial]
 
-        return [dict_to_trial(t) for t in self._get('/studies/{}/trials'.format(study_id))]
+        trials = [dict_to_trial(t) for t in self._get('/studies/{}/trials'.format(study_id))]
+        return [t for t in trials if not (t.state == structs.TrialState.COMPLETE and t.value is None)] # TODO
 
     def get_n_trials(self, study_id, state=None):
         # type: (int, Optional[structs.TrialState]) -> int
