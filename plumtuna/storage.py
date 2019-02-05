@@ -1,5 +1,9 @@
 from datetime import datetime
 import json
+from optuna import distributions  # NOQA
+from optuna.storages import base
+from optuna.storages.base import DEFAULT_STUDY_NAME_PREFIX
+from optuna import structs
 import requests
 from typing import Any  # NOQA
 from typing import Dict  # NOQA
@@ -9,32 +13,39 @@ import urllib.parse
 import urllib.request
 import uuid
 
-from optuna import distributions  # NOQA
-from optuna.storages import base
-from optuna.storages.base import DEFAULT_STUDY_NAME_PREFIX
-from optuna import structs
+from plumtuna import PlumtunaServer
 
 
 class PlumtunaStorage(base.BaseStorage):
-    def __init__(self, host='localhost', port=7363):
-        self.host = host
-        self.port = port
+    def __init__(self, bind_addr=None, bind_port=None, contact_host=None, contact_port=None):
+        self.server = PlumtunaServer(bind_addr, bind_port, contact_host, contact_port)
+
+        self.http_host = '127.0.0.1'
+        self.http_port = self.server.http_port
+
+    @property
+    def rpc_addr(self):
+        return self.server.rpc_addr
+
+    @property
+    def rpc_port(self):
+        return self.server.rpc_port
 
     def _get(self, path):
-        res = requests.get('http://{}:{}{}'.format(self.host, self.port, path))
+        res = requests.get('http://{}:{}{}'.format(self.http_host, self.http_port, path))
         assert res.status_code is 200, '{}: {}'.format(path, res.text)
         return res.json()
 
     def _post(self, path, body=None):
         if body is None:
-            res = requests.post('http://{}:{}{}'.format(self.host, self.port, path))
+            res = requests.post('http://{}:{}{}'.format(self.http_host, self.http_port, path))
         else:
-            res = requests.post('http://{}:{}{}'.format(self.host, self.port, path), data=json.dumps(body))
+            res = requests.post('http://{}:{}{}'.format(self.http_host, self.http_port, path), data=json.dumps(body))
         assert res.status_code is 200, '{}: {}'.format(path, res.text)
         return res.json()
 
     def _put(self, path, body):
-        res = requests.put('http://{}:{}{}'.format(self.host, self.port, path), data=json.dumps(body))
+        res = requests.put('http://{}:{}{}'.format(self.http_host, self.http_port, path), data=json.dumps(body))
         assert res.status_code is 200, '{}: {}'.format(path, res.text)
         return res.json()
 
