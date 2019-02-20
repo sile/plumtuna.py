@@ -11,7 +11,7 @@ class PlumtunaServer(object):
             rpc_addr, rpc_port = find_rpc_server_addr_and_port(bind_addr, bind_port)
         else:
             contact_port = contact_port or DEFAULT_PORT
-            rpc_addr, rpc_port = find_rpc_client_addr_and_port(bind_port, bind_port, contact_host, contact_port)
+            rpc_addr, rpc_port = find_rpc_client_addr_and_port(bind_addr, bind_port, contact_host, contact_port)
 
         args = ["plumtuna",
                 "--http-port", str(http_port),
