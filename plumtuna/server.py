@@ -13,9 +13,12 @@ class PlumtunaServer(object):
             contact_port = contact_port or DEFAULT_PORT
             rpc_addr, rpc_port = find_rpc_client_addr_and_port(bind_port, bind_port, contact_host, contact_port)
 
-        args = ["plumtuna", "--http_port", str(http_port), "--rpc_addr", "{}:{}".format(rpc_addr, rpc_port)]
+        args = ["plumtuna",
+                "--http-port", str(http_port),
+                "--rpc-addr", "{}:{}".format(rpc_addr, rpc_port),
+                "--exit-if-stdin-close"]
         if contact_host is not None:
-            args.extend(["--contact_server", "{}:{}".format(contact_host, contact_port)])
+            args.extend(["--contact-server", "{}:{}".format(contact_host, contact_port)])
 
         self._process = subprocess.Popen(args, stdin=subprocess.PIPE)
         assert self._process is not None

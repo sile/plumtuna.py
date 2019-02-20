@@ -24,6 +24,7 @@ import sklearn.datasets
 import sklearn.ensemble
 import sklearn.model_selection
 import sklearn.svm
+import time
 
 
 # FYI: Objective functions can take additional arguments
@@ -51,6 +52,7 @@ if __name__ == '__main__':
                                 load_if_exists=True,
                                 storage=plumtuna.PlumtunaStorage(contact_host='localhost'))
     study.optimize(objective, n_trials=100)
+    time.sleep(2)
     print('Number of finished trials: {}'.format(len(study.trials)))
 
     print('Best trial:')

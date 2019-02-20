@@ -22,7 +22,7 @@ class PlumtunaStorage(base.BaseStorage):
         self.server = PlumtunaServer(bind_addr, bind_port, contact_host, contact_port)
 
         # TODO
-        time.sleep(5)
+        time.sleep(1)
 
         self.http_host = '127.0.0.1'
         self.http_port = self.server.http_port
@@ -44,9 +44,18 @@ class PlumtunaStorage(base.BaseStorage):
         if body is None:
             res = requests.post('http://{}:{}{}'.format(self.http_host, self.http_port, path))
         else:
-            res = requests.post('http://{}:{}{}'.format(self.http_host, self.http_port, path), data=json.dumps(body))
+            res = requests.post('http://{}:{}{}'.format(self.http_host, self.http_port, path),
+                                data=json.dumps(body))
         assert res.status_code is 200, '{}: {}'.format(path, res.text)
         return res.json()
+
+    def _post2(self, path, body=None):
+        if body is None:
+            res = requests.post('http://{}:{}{}'.format(self.http_host, self.http_port, path))
+        else:
+            res = requests.post('http://{}:{}{}'.format(self.http_host, self.http_port, path),
+                                data=json.dumps(body))
+        return res.status_code, res.json()
 
     def _put(self, path, body):
         res = requests.put('http://{}:{}{}'.format(self.http_host, self.http_port, path), data=json.dumps(body))
@@ -60,8 +69,8 @@ class PlumtunaStorage(base.BaseStorage):
             study_uuid = str(uuid.uuid4())
             study_name = DEFAULT_STUDY_NAME_PREFIX + study_uuid
 
-        res = self._post('/studies', {'study_name': study_name})
-        if res['study_id'] is None:
+        status, res = self._post2('/studies', {'study_name': study_name})
+        if status == 409:
             raise structs.DuplicatedStudyError
 
         return res['study_id']
@@ -226,7 +235,7 @@ def dict_to_trial(d):
         params_in_internal_repr[k] = v['value']
 
     return structs.FrozenTrial(
-        trial_id=d['id'],
+        trial_id=d['trial_id'],
         state=str_to_trial_state(d['state']),
         params=params,
         user_attrs=d['user_attrs'],
