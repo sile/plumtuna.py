@@ -21,12 +21,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeout", type=int, help = "timeout", default=60, required=False)
     parser.add_argument("--study", type=str, help = "study name", default="foo", required=False)
+    parser.add_argument("--port", type=int, help = "plumtuna bind port", default=None, required=False)
     parser.add_argument("--contact", type=str, help = "plumtuna contact host", default="localhost", required=False)
     parser.add_argument("--storage", type=str, help = "storage URL", default=None, required=False)
     args = parser.parse_args()
 
     if args.storage is None:
-        storage = plumtuna.PlumtunaStorage(contact_host=args.contact)
+        storage = plumtuna.PlumtunaStorage(bind_port=args.port, contact_host=args.contact)
     else:
         storage = args.storage
 
