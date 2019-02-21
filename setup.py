@@ -5,5 +5,5 @@ setup(
     name="plumtuna",
     version="0.0.1",
     packages=find_packages(),
-    install_requires=["optuna"],
+    install_requires=["optuna", "requests"],
 )
