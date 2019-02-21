@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime
 import json
 from optuna import distributions  # NOQA
@@ -6,6 +7,7 @@ from optuna.storages.base import DEFAULT_STUDY_NAME_PREFIX
 from optuna import structs
 import requests
 import time
+import threading
 from typing import Any  # NOQA
 from typing import Dict  # NOQA
 from typing import List  # NOQA
@@ -16,7 +18,6 @@ import uuid
 
 from plumtuna import PlumtunaServer
 
-
 class PlumtunaStorage(base.BaseStorage):
     def __init__(self, bind_addr=None, bind_port=None, contact_host=None, contact_port=None):
         self.server = PlumtunaServer(bind_addr, bind_port, contact_host, contact_port)
@@ -26,6 +27,8 @@ class PlumtunaStorage(base.BaseStorage):
 
         self.http_host = '127.0.0.1'
         self.http_port = self.server.http_port
+        self.studies = {}
+        self._lock = threading.Lock()
 
     @property
     def rpc_addr(self):
@@ -62,6 +65,22 @@ class PlumtunaStorage(base.BaseStorage):
         assert res.status_code is 200, '{}: {}'.format(path, res.text)
         return res.json()
 
+    def _subscribe(self, study_id, study_name):
+        with self._lock:
+            if study_id not in self.studies:
+                subscribe_id = self._post('/studies/{}/subscribe'.format(study_id))
+                self.studies[study_id] = StudyState(study_id, study_name, subscribe_id)
+
+    def _poll(self, study_id):
+        with self._lock:
+            subscribe_id = self.studies[study_id].subscribe_id
+            messages = self._get('/studies/{}/subscribe/{}'.format(study_id, subscribe_id))
+            for m in messages:
+                self.studies[study_id].handle_message(m)
+
+    def _study_id(self, trial_id):
+        return trial_id.split('.')[0]
+
     def create_new_study_id(self, study_name=None):
         # type: (Optional[str]) -> int
 
@@ -73,7 +92,9 @@ class PlumtunaStorage(base.BaseStorage):
         if status == 409:
             raise structs.DuplicatedStudyError
 
-        return res['study_id']
+        study_id = res['study_id']
+        self._subscribe(study_id, study_name)
+        return study_id
 
     def set_study_user_attr(self, study_id, key, value):
         # type: (int, str, Any) -> None
@@ -103,39 +124,50 @@ class PlumtunaStorage(base.BaseStorage):
         # type: (str) -> int
 
         res = self._get('/study_names/{}'.format(study_name))
-        return res['study_id']
+        study_id = res['study_id']
+        self._subscribe(study_id, study_name)
+        return study_id
 
     def get_study_name_from_id(self, study_id):
         # type: (int) -> str
 
-        res = self._get('/studies/{}'.format(study_id))
-        return res['study_name']
+        # res = self._get('/studies/{}'.format(study_id))
+        # return res['study_name']
+        return self.studies[study_id].study_name
 
     def get_study_direction(self, study_id):
         # type: (int) -> structs.StudyDirection
 
-        d = self._get('/studies/{}/direction'.format(study_id))
-        if d == 'NOT_SET':
-            return structs.StudyDirection.NOT_SET
-        elif d == 'MINIMIZE':
-            return structs.StudyDirection.MINIMIZE
-        else:
-            return structs.StudyDirection.MAXIMIZE
+        self._poll(study_id)
+        return self.studies[study_id].direction
+        # d = self._get('/studies/{}/direction'.format(study_id))
+        # if d == 'NOT_SET':
+        #     return structs.StudyDirection.NOT_SET
+        # elif d == 'MINIMIZE':
+        #     return structs.StudyDirection.MINIMIZE
+        # else:
+        #     return structs.StudyDirection.MAXIMIZE
 
     def get_study_user_attrs(self, study_id):
         # type: (int) -> Dict[str, Any]
 
-        return self._get('/studies/{}/user_attrs'.format(study_id))
+        self._poll(study_id)
+        return copy.deepcopy(self.studies[study_id].user_attrs)
+        # return self._get('/studies/{}/user_attrs'.format(study_id))
 
     def get_study_system_attrs(self, study_id):
         # type: (int) -> Dict[str, Any]
 
-        return self._get('/studies/{}/system_attrs'.format(study_id))
+        self._poll(study_id)
+        return copy.deepcopy(self.studies[study_id].system_attrs)
+        # return self._get('/studies/{}/system_attrs'.format(study_id))
 
     def get_all_study_summaries(self):
         # type: () -> List[structs.StudySummary]
 
-        return self._get('/studies')
+        self._poll(study_id)
+        return [s.summary() for s in self.studies.values()]
+        # return self._get('/studies')
 
     # Basic trial manipulation
 
@@ -161,7 +193,11 @@ class PlumtunaStorage(base.BaseStorage):
     def get_trial_param(self, trial_id, param_name):
         # type: (int, str) -> float
 
-        return self._get('/trials/{}/params/{}'.format(trial_id, param_name))
+        study_id = self._study_id(trial_id)
+        self._poll(study_id)
+        return self.studies[study_id].trials[trial_id].trial_params[param_name]
+
+        # return self._get('/trials/{}/params/{}'.format(trial_id, param_name))
 
     def set_trial_value(self, trial_id, value):
         # type: (int, float) -> None
@@ -189,17 +225,23 @@ class PlumtunaStorage(base.BaseStorage):
     def get_trial(self, trial_id):
         # type: (int) -> structs.FrozenTrial
 
-        return dict_to_trial(self._get('/trials/{}'.format(trial_id)))
+        study_id = self._study_id(trial_id)
+        self._poll(study_id)
+        return copy.deepcopy(self.studies[study_id].trials[trial_id])
+        # return dict_to_trial(self._get('/trials/{}'.format(trial_id)))
 
     def get_all_trials(self, study_id):
         # type: (int) -> List[structs.FrozenTrial]
 
-        trials = [dict_to_trial(t) for t in self._get('/studies/{}/trials'.format(study_id))]
-        return [t for t in trials if not (t.state == structs.TrialState.COMPLETE and t.value is None)] # TODO
+        self._poll(study_id)
+        return [copy.deepcopy(t) for t in self.studies[study_id].trials.values()]
+
+        # return [dict_to_trial(t) for t in self._get('/studies/{}/trials'.format(study_id))]
 
     def get_n_trials(self, study_id, state=None):
         # type: (int, Optional[structs.TrialState]) -> int
 
+        # TODO
         if state is None:
             return self._get('/studies/{}/n_trials'.format(study_id))
         else:
@@ -246,3 +288,75 @@ def dict_to_trial(d):
         datetime_start=datetime.fromtimestamp(d['datetime_start']),
         datetime_complete=datetime.fromtimestamp(d['datetime_end']) if d['datetime_end'] else None,
     )
+
+class StudyState(object):
+    def __init__(self, study_id, study_name, subscribe_id):
+        self.study_id = study_id
+        self.study_name = study_name
+        self.subscribe_id = subscribe_id
+        self.trials = {}
+        self.direction = structs.StudyDirection.NOT_SET
+        self.user_attrs = {}
+        self.system_attrs = {}
+
+    def handle_message(self, message):
+        kind, v = next(iter(message.items()))
+        if kind == 'SetStudyDirection':
+            d = v['direction']
+            if d == 'NOT_SET':
+                self.direction = structs.StudyDirection.NOT_SET
+            elif d == 'MINIMIZE':
+                self.direction = structs.StudyDirection.MINIMIZE
+            else:
+                self.direction = structs.StudyDirection.MAXIMIZE
+        elif kind == 'SetStudyUserAttr':
+            self.user_attrs[v['key']] = v['value']
+        elif kind == 'SetStudySystemAttr':
+            self.system_attrs[v['key']] = v['value']
+        elif kind == 'CreateTrial':
+            t = self._trial(v['trial_id'])
+            self.trials[t.trial_id] = t._replace(datetime_start=datetime.fromtimestamp(v['timestamp']['secs']))  # TODO: nanos
+        elif kind == 'SetTrialState':
+            t = self._trial(v['trial_id'])
+            t = t._replace(state=str_to_trial_state(v['state']))
+            if v['state'] != 'RUNNING':
+                t = t._replace(datetime_complete=datetime.fromtimestamp(v['timestamp']['secs']))  # TODO: nanos
+            self.trials[t.trial_id] = t
+        elif kind == 'SetTrialParam':
+            t = self._trial(v['trial_id'])
+            distribution = distributions.json_to_distribution(v['value']['distribution'])
+            t.params[v['key']] = distribution.to_external_repr(v['value']['value'])
+            t.params_in_internal_repr[v['key']] = v['value']['value']
+        elif kind == 'SetTrialValue':
+            t = self._trial(v['trial_id'])
+            self.trials[t.trial_id] = t._replace(value=v['value'])
+        elif kind == 'SetTrialIntermediateValue':
+            t = self._trial(v['trial_id'])
+            t.intermediate_values[v['step']] = v['value']
+        elif kind == 'SetTrialUserAttr':
+            t = self._trial(v['trial_id'])
+            t.user_attrs[v['key']] = v['value']
+        elif kind == 'SetTrialSystemAttr':
+            t = self._trial(v['trial_id'])
+            t.system_attrs[v['key']] = v['value']
+        else:
+            raise NotImplementedError(str(message))
+
+    def _trial(self, trial_id):
+        if trial_id in self.trials:
+            return self.trials[trial_id]
+
+        trial = structs.FrozenTrial(
+            trial_id=trial_id,
+            state=structs.TrialState.RUNNING,
+            params={},
+            user_attrs={},
+            system_attrs={},
+            value=None,
+            intermediate_values={},
+            params_in_internal_repr={},
+            datetime_start=None,
+            datetime_complete=None
+        )
+        self.trials[trial_id] = trial
+        return trial
