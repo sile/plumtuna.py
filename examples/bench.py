@@ -1,4 +1,5 @@
 import argparse
+from collections import defaultdict
 import optuna
 import plumtuna
 from random import random
@@ -8,9 +9,9 @@ def objective(trial):
     for i in range(0,10):
         trial.suggest_uniform('param_{}'.format(i), 0.0, 1.0)
 
+    v = random()
     for i in range(0, 100):
         time.sleep(1)
-        v = random()
         trial.report(v, i)
         if trial.should_prune(i):
             raise optuna.structs.TrialPruned("v={}, step={}".format(v, i))
@@ -38,13 +39,22 @@ if __name__ == '__main__':
         pruner=optuna.pruners.SuccessiveHalvingPruner()
     )
     study.optimize(objective, timeout=args.timeout)
-    print('Number of finished trials: {}'.format(len(study.trials)))
 
-    print('Best trial:')
-    trial = study.best_trial
+    pruned_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.PRUNED]
+    complete_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.COMPLETE]
+    print('Study statistics: ')
+    print('  Number of finished trials: ', len(study.trials))
+    print('  Number of pruned trials: ', len(pruned_trials))
+    print('  Number of complete trials: ', len(complete_trials))
 
-    print('  Value: {}'.format(trial.value))
+    steps = defaultdict(int)
+    losses = defaultdict(float)
+    for t in pruned_trials:
+        last_step = max(t.intermediate_values.keys())
+        steps[last_step] += 1
+        losses[last_step] += t.intermediate_values[last_step]
 
-    print('  Params: ')
-    for key, value in trial.params.items():
-        print('    {}: {}'.format(key, value))
+    print('Pruned statistics:')
+    for step, count in sorted(list(steps.items())):
+        print("  step[{}]: \tpruned_count={}, \tpruned_loss_avg={}".format(
+            step, count, losses[step] / count))
