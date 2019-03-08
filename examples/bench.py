@@ -36,7 +36,6 @@ if __name__ == '__main__':
         study_name=args.study,
         load_if_exists=True,
         storage=storage,
-        sampler=optuna.samplers.RandomSampler(),
         pruner=optuna.pruners.SuccessiveHalvingPruner()
     )
     study.optimize(objective, timeout=args.timeout)
